@@ -9,6 +9,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body style="margin:0">
@@ -80,6 +82,8 @@ function JihiRegister() {
   const [proviso, setProviso] = useState("自由診療として");
   const [receipt, setReceipt] = useState(null); // sale being printed
   const [confirmDel, setConfirmDel] = useState(null);
+  const [pdf, setPdf] = useState(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const printTimer = useRef(null);
 
   useEffect(() => {
@@ -152,12 +156,49 @@ function JihiRegister() {
     setMemo("");
     setPrintItems(false);
     setProviso("自由診療として");
-    printTimer.current = setTimeout(() => window.print(), 400);
+    printTimer.current = setTimeout(() => makePdf(), 500);
   };
 
   const reprint = (sale) => {
     setReceipt(sale);
-    printTimer.current = setTimeout(() => window.print(), 400);
+    printTimer.current = setTimeout(() => makePdf(), 500);
+  };
+
+  const makePdf = async () => {
+    if (!(window.html2canvas && window.jspdf)) { window.print(); return; }
+    setPdfBusy(true);
+    const el = document.getElementById("receipt-print");
+    try {
+      el.style.display = "block";
+      el.style.position = "fixed";
+      el.style.left = "-9999px";
+      el.style.top = "0";
+      el.style.width = "148mm";
+      el.style.height = "208mm";
+      el.style.padding = "10mm";
+      el.style.boxSizing = "border-box";
+      el.style.background = "#ffffff";
+      const canvas = await window.html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
+      el.style.display = "none";
+      const doc = new window.jspdf.jsPDF({ unit: "mm", format: [148, 210], orientation: "portrait" });
+      doc.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", 0, 0, 148, 208);
+      const blob = doc.output("blob");
+      setPdf({ blob, url: URL.createObjectURL(blob) });
+    } catch (e) {
+      console.error(e);
+      if (el) el.style.display = "none";
+      window.print();
+    }
+    setPdfBusy(false);
+  };
+
+  const sharePdf = async () => {
+    if (!pdf) return;
+    const file = new File([pdf.blob], "ryoshusho.pdf", { type: "application/pdf" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === "AbortError") return; }
+    }
+    window.open(pdf.url, "_blank");
   };
 
   const toggleVoid = (id) => {
@@ -560,6 +601,24 @@ function JihiRegister() {
               style={{ borderColor: "#D6DEE6" }}
             />
             <div className="text-xs" style={{ color: "#8A97A6" }}>次に発行される領収書の番号です。</div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ PDF ready banner ============ */}
+      {(pdf || pdfBusy) && (
+        <div className="app-ui fixed left-0 right-0 px-4" style={{ bottom: "64px" }}>
+          <div className="rounded-2xl shadow-lg border bg-white p-3 flex items-center gap-3" style={{ borderColor: "#D6DEE6" }}>
+            {pdfBusy ? (
+              <div className="flex-1 text-sm" style={{ color: "#5A6B7E" }}>領収書PDFを作成中…</div>
+            ) : (
+              <>
+                <button onClick={sharePdf} className="flex-1 rounded-xl py-3 text-white font-semibold text-sm" style={{ background: "#C2372E" }}>
+                  領収書を印刷（プリントを選択）
+                </button>
+                <button onClick={() => setPdf(null)} className="text-sm px-2" style={{ color: "#8A97A6" }}>閉じる</button>
+              </>
+            )}
           </div>
         </div>
       )}
